@@ -9,4 +9,4 @@
  *   'primary'  → always use the 8B model
  *   null       → automatic RAM-based selection (default)
  */
-export const DEV_FORCE_MODEL: 'primary' | 'fallback' | null = 'fallback';
+export const DEV_FORCE_MODEL: 'primary' | 'fallback' | null = 'primary';
