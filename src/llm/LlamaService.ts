@@ -5,8 +5,11 @@ import type { ChatMessage } from './types';
 const SYSTEM_PROMPT =
   'You are a helpful, concise assistant running on the user’s phone. ' +
   'You can search the user’s Gmail with the search_gmail tool whenever they ' +
-  'ask about their email or inbox. After you receive email results, answer the ' +
-  'user in plain language and cite the sender and subject — do not show raw tool output.';
+  'ask about their email or inbox, and you can read a web page with the ' +
+  'fetch_url tool whenever they share a link or ask you to read or summarize a ' +
+  'URL (never guess a page’s contents from its address — always fetch it first). ' +
+  'After you receive tool results, answer the user in plain language — do not ' +
+  'show raw tool output.';
 
 /** How many of the most recent turns to keep in context (sliding window). */
 const MAX_HISTORY_MESSAGES = 12;
@@ -63,7 +66,9 @@ class LlamaServiceImpl {
     this.context = await initLlama(
       {
         model: `file://${modelPath}`,
-        n_ctx: 2048,
+        // Larger window so fetched web pages / longer email lists fit in context.
+        // Costs more KV-cache RAM (~0.11MB/token for the 3B), so keep it moderate.
+        n_ctx: 8192,
         n_gpu_layers: 99, // offloaded to GPU where supported (Adreno OpenCL), ignored otherwise
         use_mlock: true,
       },
