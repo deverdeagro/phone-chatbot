@@ -183,7 +183,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 18, fontWeight: '700', color: '#111827', marginBottom: 8 },
   connected: { fontSize: 14, color: '#059669', marginBottom: 12 },
   help: { fontSize: 13, color: '#6b7280', marginBottom: 12, lineHeight: 18 },
-  link: { color: '#2563eb', textDecorationLine: 'underline' },
+  link: { color: '#4F46E5', textDecorationLine: 'underline' },
   input: {
     borderWidth: 1,
     borderColor: '#d1d5db',
@@ -197,7 +197,7 @@ const styles = StyleSheet.create({
   error: { color: '#b91c1c', fontSize: 13, marginTop: 10 },
   primaryBtn: {
     marginTop: 16,
-    backgroundColor: '#2563eb',
+    backgroundColor: '#4F46E5',
     borderRadius: 24,
     paddingVertical: 14,
     alignItems: 'center',

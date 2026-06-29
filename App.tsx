@@ -118,7 +118,7 @@ function AppContent() {
 function App() {
   return (
     <SafeAreaProvider>
-      <StatusBar barStyle="dark-content" backgroundColor="#f9fafb" />
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       <AppContent />
     </SafeAreaProvider>
   );
