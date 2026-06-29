@@ -1,27 +1,25 @@
 import TcpSocket from 'react-native-tcp-socket';
 import { decodeMimeWords } from './mime';
+import { isGmailHost } from './providers';
+import type { EmailAccount, EmailSummary } from './types';
 
-const HOST = 'imap.gmail.com';
-const PORT = 993;
 const TIMEOUT_MS = 25000;
 
-export type EmailSummary = {
-  uid: string;
-  from: string;
-  subject: string;
-  date: string;
-  snippet: string;
-};
-
-type TLSSocket = ReturnType<typeof TcpSocket.connectTLS>;
+type Socket = ReturnType<typeof TcpSocket.createConnection>;
 
 /**
- * Minimal IMAP-over-TLS client, just enough to log in to Gmail with an App
- * Password and search/preview the inbox. One command runs at a time; each
- * command resolves when its tagged completion (`aN OK/NO/BAD`) arrives.
+ * Minimal IMAP-over-TLS (or plain TCP) client: log in, select INBOX, search,
+ * and preview messages. One command runs at a time; each resolves when its
+ * tagged completion (`aN OK/NO/BAD`) arrives.
  */
 class ImapConnection {
-  private socket: TLSSocket | null = null;
+  constructor(
+    private host: string,
+    private port: number,
+    private ssl: boolean,
+  ) {}
+
+  private socket: Socket | null = null;
   private buffer = '';
   private tagSeq = 0;
   private pending: {
@@ -36,16 +34,17 @@ class ImapConnection {
     return new Promise((resolve, reject) => {
       this.greeting = { resolve, reject };
       const timer = setTimeout(
-        () => reject(new Error('Timed out connecting to Gmail (IMAP).')),
+        () => reject(new Error(`Timed out connecting to ${this.host}.`)),
         TIMEOUT_MS,
       );
 
-      const socket = TcpSocket.connectTLS({ host: HOST, port: PORT }, () => {});
+      const opts = { host: this.host, port: this.port };
+      const socket = this.ssl
+        ? TcpSocket.connectTLS(opts, () => {})
+        : TcpSocket.createConnection(opts, () => {});
       this.socket = socket;
       socket.setEncoding('utf8');
 
-      // We call setEncoding('utf8'), so data arrives as strings (the socket
-      // type still allows a binary chunk, so coerce defensively).
       socket.on('data', (chunk: string | { toString(): string }) => {
         this.buffer += typeof chunk === 'string' ? chunk : chunk.toString();
         this.processBuffer(timer);
@@ -55,13 +54,12 @@ class ImapConnection {
         this.failAll(err);
       });
       socket.on('close', () => {
-        this.failAll(new Error('Gmail connection closed unexpectedly.'));
+        this.failAll(new Error('Connection closed unexpectedly.'));
       });
     });
   }
 
   private processBuffer(connectTimer?: ReturnType<typeof setTimeout>) {
-    // Resolve the initial server greeting once.
     if (this.greeting) {
       if (/^\* (OK|PREAUTH)/m.test(this.buffer)) {
         const g = this.greeting;
@@ -74,7 +72,6 @@ class ImapConnection {
       }
       return;
     }
-
     if (!this.pending) {
       return;
     }
@@ -84,14 +81,12 @@ class ImapConnection {
     if (!m) {
       return;
     }
-
     const endIdx = (m.index ?? 0) + m[0].length;
     const responseText = this.buffer.slice(0, endIdx);
     this.buffer = this.buffer.slice(endIdx);
     const status = m[2];
     const { resolve, reject } = this.pending;
     this.pending = null;
-
     if (status === 'OK') {
       resolve(responseText);
     } else {
@@ -106,7 +101,7 @@ class ImapConnection {
     const tag = `a${++this.tagSeq}`;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(
-        () => reject(new Error('Gmail (IMAP) command timed out.')),
+        () => reject(new Error('IMAP command timed out.')),
         TIMEOUT_MS,
       );
       this.pending = {
@@ -131,44 +126,39 @@ class ImapConnection {
     this.pending = null;
   }
 
-  async login(email: string, appPassword: string): Promise<void> {
-    await this.send(`LOGIN ${quote(email)} ${quote(appPassword)}`);
+  async login(username: string, password: string): Promise<void> {
+    await this.send(`LOGIN ${quote(username)} ${quote(password)}`);
   }
 
   async selectInbox(): Promise<void> {
     await this.send('SELECT INBOX');
   }
 
-  /** Search using Gmail's native search syntax (from:, subject:, keywords…). */
-  async search(query: string): Promise<string[]> {
-    const res = await this.send(`UID SEARCH X-GM-RAW ${quote(query)}`);
+  /** Search the inbox; uses Gmail's X-GM-RAW when available, else standard IMAP. */
+  async search(query: string, gmail: boolean): Promise<string[]> {
+    const criteria = gmail
+      ? `X-GM-RAW ${quote(query)}`
+      : buildStandardSearch(query);
+    const res = await this.send(`UID SEARCH ${criteria}`);
     const line = res.match(/\* SEARCH([^\r\n]*)/i);
-    if (!line) {
-      return [];
-    }
-    return line[1].trim().split(/\s+/).filter(Boolean);
+    return line ? line[1].trim().split(/\s+/).filter(Boolean) : [];
   }
 
-  /** Fetch sender/subject/date headers plus a short body snippet for one UID. */
-  async fetchSummary(uid: string): Promise<EmailSummary> {
+  async fetchSummary(uid: string, accountLabel: string): Promise<EmailSummary> {
     const res = await this.send(
       `UID FETCH ${uid} (BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)] BODY.PEEK[1]<0.400>)`,
     );
-
     const headerBlock = extractLiteral(res, 'HEADER.FIELDS') ?? '';
     const unfolded = headerBlock.replace(/\r\n[ \t]+/g, ' ');
     const header = (name: string) =>
       unfolded.match(new RegExp(`^${name}:\\s*(.*)$`, 'im'))?.[1]?.trim() ?? '';
-
     const bodyRaw = extractLiteral(res, 'BODY[1]') ?? '';
-    const snippet = bodyRaw.replace(/\s+/g, ' ').trim().slice(0, 240);
-
     return {
-      uid,
+      accountLabel,
       from: decodeMimeWords(header('From')),
       subject: decodeMimeWords(header('Subject')) || '(no subject)',
       date: header('Date'),
-      snippet,
+      snippet: bodyRaw.replace(/\s+/g, ' ').trim().slice(0, 240),
     };
   }
 
@@ -183,15 +173,36 @@ class ImapConnection {
   }
 }
 
-/** Quote a string as an IMAP quoted-string, escaping `\` and `"`. */
 function quote(s: string): string {
   return `"${s.replace(/([\\"])/g, '\\$1')}"`;
 }
 
 /**
- * Extract the IMAP literal (`{N}\r\n...`) that immediately follows `marker`
- * in the response text. Returns null if not found.
+ * Translate a free-text / Gmail-style query into standard IMAP SEARCH criteria
+ * (ANDed). e.g. `from:bob invoice` -> `FROM "bob" TEXT "invoice"`.
  */
+function buildStandardSearch(query: string): string {
+  const parts: string[] = [];
+  const remaining = query
+    .replace(/\bfrom:(\S+)/gi, (_m, v: string) => {
+      parts.push(`FROM ${quote(v)}`);
+      return '';
+    })
+    .replace(/\bsubject:(\S+)/gi, (_m, v: string) => {
+      parts.push(`SUBJECT ${quote(v)}`);
+      return '';
+    })
+    .replace(/\bto:(\S+)/gi, (_m, v: string) => {
+      parts.push(`TO ${quote(v)}`);
+      return '';
+    })
+    .trim();
+  if (remaining) {
+    parts.push(`TEXT ${quote(remaining)}`);
+  }
+  return parts.length ? parts.join(' ') : 'ALL';
+}
+
 function extractLiteral(response: string, marker: string): string | null {
   const markerIdx = response.indexOf(marker);
   if (markerIdx === -1) {
@@ -202,32 +213,47 @@ function extractLiteral(response: string, marker: string): string | null {
     return null;
   }
   const start = markerIdx + lit.index + lit[0].length;
-  const len = parseInt(lit[1], 10);
-  return response.slice(start, start + len);
+  return response.slice(start, start + parseInt(lit[1], 10));
 }
 
-/**
- * Connect, search Gmail, and return summaries for the most recent matches.
- */
-export async function searchGmail(
-  email: string,
-  appPassword: string,
+/** Connect to an IMAP account, search, and return the most recent matches. */
+export async function searchImapAccount(
+  account: EmailAccount,
   query: string,
   limit: number,
 ): Promise<EmailSummary[]> {
-  const conn = new ImapConnection();
+  const conn = new ImapConnection(
+    account.imapHost,
+    account.imapPort,
+    account.imapUseSsl,
+  );
   try {
     await conn.connect();
-    await conn.login(email, appPassword);
+    await conn.login(account.username || account.emailAddress, account.password);
     await conn.selectInbox();
-    const uids = await conn.search(query);
-    // UIDs come back ascending; take the most recent `limit`, newest first.
+    const uids = await conn.search(query, isGmailHost(account.imapHost));
     const recent = uids.slice(-limit).reverse();
-    const summaries: EmailSummary[] = [];
+    const out: EmailSummary[] = [];
     for (const uid of recent) {
-      summaries.push(await conn.fetchSummary(uid));
+      out.push(await conn.fetchSummary(uid, account.label));
     }
-    return summaries;
+    return out;
+  } finally {
+    conn.close();
+  }
+}
+
+/** Quick credential check used when adding an account. */
+export async function verifyImapAccount(account: EmailAccount): Promise<void> {
+  const conn = new ImapConnection(
+    account.imapHost,
+    account.imapPort,
+    account.imapUseSsl,
+  );
+  try {
+    await conn.connect();
+    await conn.login(account.username || account.emailAddress, account.password);
+    await conn.selectInbox();
   } finally {
     conn.close();
   }

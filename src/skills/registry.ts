@@ -1,4 +1,4 @@
-import { gmailSkill } from './gmail/gmailSkill';
+import { emailSkill } from './email/emailSkill';
 import { fetchUrlSkill } from './web/fetchUrlSkill';
 import type { Skill, ToolDefinition } from './types';
 
@@ -6,7 +6,7 @@ import type { Skill, ToolDefinition } from './types';
  * All skills the model is allowed to call. Add new skills here and they are
  * automatically advertised to the model as tools.
  */
-const SKILLS: Skill[] = [gmailSkill, fetchUrlSkill];
+const SKILLS: Skill[] = [emailSkill, fetchUrlSkill];
 
 /** Tool definitions to pass to llama.rn's completion({ tools }). */
 export function getToolDefinitions(): ToolDefinition[] {

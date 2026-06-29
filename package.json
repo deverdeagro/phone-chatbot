@@ -14,6 +14,7 @@
     "llama.rn": "^0.12.5",
     "react": "19.2.3",
     "react-native": "0.86.0",
+    "react-native-app-auth": "^8.4.0",
     "react-native-device-info": "^15.0.2",
     "react-native-fs": "^2.20.0",
     "react-native-keychain": "^10.0.0",

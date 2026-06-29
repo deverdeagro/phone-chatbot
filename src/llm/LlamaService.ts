@@ -4,12 +4,13 @@ import type { ChatMessage } from './types';
 
 const SYSTEM_PROMPT =
   'You are a helpful, concise assistant running on the user’s phone. ' +
-  'You can search the user’s Gmail with the search_gmail tool whenever they ' +
-  'ask about their email or inbox, and you can read a web page with the ' +
+  'You can search all of the user’s connected email accounts (Gmail, Outlook, ' +
+  'and other IMAP mailboxes) with the search_email tool whenever they ask about ' +
+  'their email, inbox, or messages, and you can read a web page with the ' +
   'fetch_url tool whenever they share a link or ask you to read or summarize a ' +
   'URL (never guess a page’s contents from its address — always fetch it first). ' +
-  'After you receive tool results, answer the user in plain language — do not ' +
-  'show raw tool output.';
+  'After you receive tool results, answer the user in plain language, noting ' +
+  'which account a message came from when relevant — do not show raw tool output.';
 
 /** How many of the most recent turns to keep in context (sliding window). */
 const MAX_HISTORY_MESSAGES = 12;

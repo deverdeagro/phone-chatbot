@@ -84,6 +84,9 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
+        // Redirect scheme for react-native-app-auth (Microsoft Graph OAuth).
+        // Azure redirect URI: com.phonechatbot://oauth2redirect
+        manifestPlaceholders = [appAuthRedirectScheme: 'com.phonechatbot']
     }
     signingConfigs {
         debug {

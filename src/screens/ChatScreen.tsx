@@ -15,8 +15,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MessageBubble } from '../components/MessageBubble';
 import { LlamaService } from '../llm/LlamaService';
 import type { ChatMessage } from '../llm/types';
-import { GmailConnectModal } from '../skills/gmail/GmailConnectModal';
-import { getGmailCredentials } from '../skills/gmail/credentials';
+import { AccountsModal } from '../skills/email/AccountsModal';
+import { getActiveAccounts } from '../skills/email/accountsStore';
 import { colors, radius, shadow, space } from '../theme';
 
 const ICON = require('../assets/icon.png');
@@ -42,13 +42,13 @@ export function ChatScreen({ modelName }: Props) {
   const [generating, setGenerating] = useState(false);
   const [statusLine, setStatusLine] = useState<string | null>(null);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
-  const [gmailOpen, setGmailOpen] = useState(false);
-  const [gmailConnected, setGmailConnected] = useState(false);
+  const [accountsOpen, setAccountsOpen] = useState(false);
+  const [accountCount, setAccountCount] = useState(0);
   const listRef = useRef<FlatList<ChatMessage>>(null);
 
-  // Reflect whether Gmail is already connected (controls the header indicator).
+  // Reflect how many email accounts are connected (controls the header pill).
   useEffect(() => {
-    getGmailCredentials().then(creds => setGmailConnected(!!creds));
+    getActiveAccounts().then(accts => setAccountCount(accts.length));
   }, []);
 
   // Collapse the input's bottom (nav-bar) inset while the keyboard is up so the
@@ -155,17 +155,17 @@ export function ChatScreen({ modelName }: Props) {
         </View>
         <TouchableOpacity
           activeOpacity={0.8}
-          style={[styles.gmailBtn, gmailConnected && styles.gmailBtnOn]}
-          onPress={() => setGmailOpen(true)}>
+          style={[styles.gmailBtn, accountCount > 0 && styles.gmailBtnOn]}
+          onPress={() => setAccountsOpen(true)}>
           <View
             style={[
               styles.gmailDot,
-              { backgroundColor: gmailConnected ? colors.success : colors.textMuted },
+              { backgroundColor: accountCount > 0 ? colors.success : colors.textMuted },
             ]}
           />
           <Text
-            style={[styles.gmailBtnText, gmailConnected && styles.gmailBtnTextOn]}>
-            {gmailConnected ? 'Gmail' : 'Connect'}
+            style={[styles.gmailBtnText, accountCount > 0 && styles.gmailBtnTextOn]}>
+            {accountCount > 0 ? `Email · ${accountCount}` : 'Accounts'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -245,10 +245,10 @@ export function ChatScreen({ modelName }: Props) {
         </TouchableOpacity>
       </View>
 
-      <GmailConnectModal
-        visible={gmailOpen}
-        onClose={() => setGmailOpen(false)}
-        onConnectedChange={setGmailConnected}
+      <AccountsModal
+        visible={accountsOpen}
+        onClose={() => setAccountsOpen(false)}
+        onAccountsChange={setAccountCount}
       />
     </KeyboardAvoidingView>
   );
