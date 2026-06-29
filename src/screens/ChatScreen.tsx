@@ -14,6 +14,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MessageBubble } from '../components/MessageBubble';
 import { LlamaService } from '../llm/LlamaService';
 import type { ChatMessage } from '../llm/types';
+import { GmailConnectModal } from '../skills/gmail/GmailConnectModal';
+import { getGmailCredentials } from '../skills/gmail/credentials';
 
 type Props = {
   /** Name of the model that was loaded, shown in the header. */
@@ -30,7 +32,14 @@ export function ChatScreen({ modelName }: Props) {
   const [generating, setGenerating] = useState(false);
   const [statusLine, setStatusLine] = useState<string | null>(null);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [gmailOpen, setGmailOpen] = useState(false);
+  const [gmailConnected, setGmailConnected] = useState(false);
   const listRef = useRef<FlatList<ChatMessage>>(null);
+
+  // Reflect whether Gmail is already connected (controls the header indicator).
+  useEffect(() => {
+    getGmailCredentials().then(creds => setGmailConnected(!!creds));
+  }, []);
 
   // Collapse the input's bottom (nav-bar) inset while the keyboard is up so the
   // input sits flush above the keyboard, the way WhatsApp/Messages do it.
@@ -73,13 +82,16 @@ export function ChatScreen({ modelName }: Props) {
     scrollToEnd();
 
     try {
-      const result = await LlamaService.chat(history, partial => {
-        setMessages(prev =>
-          prev.map(m =>
-            m.id === assistantMsg.id ? { ...m, content: partial } : m,
-          ),
-        );
-        scrollToEnd();
+      const result = await LlamaService.chat(history, {
+        onToken: partial => {
+          setMessages(prev =>
+            prev.map(m =>
+              m.id === assistantMsg.id ? { ...m, content: partial } : m,
+            ),
+          );
+          scrollToEnd();
+        },
+        onStatus: status => setStatusLine(status ?? 'Thinking…'),
       });
 
       setMessages(prev =>
@@ -111,11 +123,24 @@ export function ChatScreen({ modelName }: Props) {
   return (
     <KeyboardAvoidingView style={styles.flex} behavior="padding">
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>On-Device Chat</Text>
-        <Text style={styles.headerSubtitle}>
-          {modelName}
-          {statusLine ? `  ·  ${statusLine}` : ''}
-        </Text>
+        <View style={styles.headerText}>
+          <Text style={styles.headerTitle}>On-Device Chat</Text>
+          <Text style={styles.headerSubtitle}>
+            {modelName}
+            {statusLine ? `  ·  ${statusLine}` : ''}
+          </Text>
+        </View>
+        <TouchableOpacity
+          style={[styles.gmailBtn, gmailConnected && styles.gmailBtnOn]}
+          onPress={() => setGmailOpen(true)}>
+          <Text
+            style={[
+              styles.gmailBtnText,
+              gmailConnected && styles.gmailBtnTextOn,
+            ]}>
+            {gmailConnected ? '✓ Gmail' : 'Connect Gmail'}
+          </Text>
+        </TouchableOpacity>
       </View>
 
       <FlatList
@@ -166,6 +191,12 @@ export function ChatScreen({ modelName }: Props) {
           )}
         </TouchableOpacity>
       </View>
+
+      <GmailConnectModal
+        visible={gmailOpen}
+        onClose={() => setGmailOpen(false)}
+        onConnectedChange={setGmailConnected}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -173,14 +204,27 @@ export function ChatScreen({ modelName }: Props) {
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: '#ffffff' },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#d1d5db',
     backgroundColor: '#f9fafb',
   },
+  headerText: { flex: 1 },
   headerTitle: { fontSize: 18, fontWeight: '700', color: '#111827' },
   headerSubtitle: { fontSize: 12, color: '#6b7280', marginTop: 2 },
+  gmailBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#2563eb',
+  },
+  gmailBtnOn: { backgroundColor: '#ecfdf5', borderColor: '#059669' },
+  gmailBtnText: { color: '#2563eb', fontSize: 13, fontWeight: '600' },
+  gmailBtnTextOn: { color: '#059669' },
   listContent: { paddingVertical: 12, flexGrow: 1 },
   empty: {
     textAlign: 'center',
